@@ -129,7 +129,7 @@ defmodule CaddyDevServer do
   The executable may not be available if it was not yet installed.
   """
   def bin_path do
-    name = "caddy-#{configured_target()}"
+    name = "caddy-#{configured_version()}-#{configured_target()}"
 
     Application.get_env(:caddy_dev_server, :path) ||
       if Code.ensure_loaded?(Mix.Project) do
@@ -221,17 +221,110 @@ defmodule CaddyDevServer do
   end
 
   defp extract_binary!(tar) do
+    # Check the file signature to determine if it's a zip or tar.gz file
+    case tar do
+      # ZIP file signature (PK\003\004)
+      <<0x50, 0x4B, 0x03, 0x04, _rest::binary>> ->
+        # Extract caddy.exe from ZIP file
+        extract_from_zip(tar)
+
+      # GZIP file signature (\x1F\x8B\x08)
+      <<0x1F, 0x8B, 0x08, _rest::binary>> ->
+        # Extract caddy from tar.gz file
+        extract_from_targz(tar)
+
+      _ ->
+        raise "Unknown archive format. Expected a .zip or .tar.gz file."
+    end
+  end
+
+  defp extract_from_zip(zip_data) do
+    # Create a temporary directory for extraction
+    tmp_dir = Path.join(System.tmp_dir!(), "caddy_extract_#{:erlang.unique_integer([:positive])}")
+    File.mkdir_p!(tmp_dir)
+
+    try do
+      # Create temporary zip file
+      zip_path = Path.join(tmp_dir, "caddy.zip")
+      File.write!(zip_path, zip_data, [:binary])
+
+      # Extract the ZIP file
+      {:ok, files} =
+        :zip.extract(String.to_charlist(zip_path), [{:cwd, String.to_charlist(tmp_dir)}])
+
+      # Find caddy.exe in the extracted files
+      caddy_path =
+        files
+        |> Enum.find(fn file ->
+          file |> List.to_string() |> Path.basename() |> String.downcase() == "caddy.exe"
+        end)
+        |> case do
+          nil -> raise "Could not find caddy.exe in the ZIP archive"
+          path -> Path.join(tmp_dir, List.to_string(path))
+        end
+
+      # Read the binary content
+      File.read!(caddy_path)
+    after
+      # Clean up
+      File.rm_rf!(tmp_dir)
+    end
+  end
+
+  defp extract_from_targz(targz_data) do
+    # Create a temporary directory for extraction
+    tmp_dir = Path.join(System.tmp_dir!(), "caddy_extract_#{:erlang.unique_integer([:positive])}")
+    File.mkdir_p!(tmp_dir)
+
+    try do
+      # Create temporary tar.gz file
+      targz_path = Path.join(tmp_dir, "caddy.tar.gz")
+      File.write!(targz_path, targz_data, [:binary])
+
+      # Decompress the tar.gz file
+      :ok =
+        :erl_tar.extract(String.to_charlist(targz_path), [
+          {:cwd, String.to_charlist(tmp_dir)},
+          :compressed
+        ])
+
+      # Find caddy in the extracted files
+      caddy_path = Path.join(tmp_dir, "caddy")
+
+      unless File.exists?(caddy_path) do
+        # Try to find caddy in subdirectories
+        case File.ls!(tmp_dir) |> Enum.filter(&File.dir?(Path.join(tmp_dir, &1))) do
+          [subdir | _] ->
+            caddy_path = Path.join([tmp_dir, subdir, "caddy"])
+
+            unless File.exists?(caddy_path) do
+              raise "Could not find caddy in the tar.gz archive"
+            end
+
+            caddy_path
+
+          _ ->
+            raise "Could not find caddy in the tar.gz archive"
+        end
+      end
+
+      # Read the binary content
+      File.read!(caddy_path)
+    after
+      # Clean up
+      File.rm_rf!(tmp_dir)
+    end
   end
 
   # Available targets:
-  #  caddy-freebsd_arm64
-  #  caddy-freebsd_amd64
-  #  caddy-linux_arm64
-  #  caddy-linux_amd64
-  #  caddy-linux_armv7
-  #  caddy-mac_arm64
-  #  caddy-mac_amd64
-  #  caddy-windows_amd64.exe
+  #  freebsd_arm64
+  #  freebsd_amd64
+  #  linux_arm64
+  #  linux_amd64
+  #  linux_armv7
+  #  mac_arm64
+  #  mac_amd64
+  #  windows_amd64
   defp target do
     arch_str = :erlang.system_info(:system_architecture)
     target_triple = arch_str |> List.to_string() |> String.split("-")
