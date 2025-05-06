@@ -8,7 +8,7 @@ defmodule Mix.Tasks.CaddyDevServer do
 
   Example:
 
-      $ mix caddy_dev_server default --config Caddyfile
+      $ mix caddy_dev_server default run --config Caddyfile
 
   If Caddy is not installed, it is automatically downloaded.
   Note the arguments given to this task will be appended

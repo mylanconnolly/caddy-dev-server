@@ -14,7 +14,7 @@ defmodule CaddyDevServer do
       config :caddy_dev_server,
         version: "#{@latest_version}",
         default: [
-          args: ~w(--config Caddyfile)
+          args: ~w(run --config Caddyfile)
         ]
 
   ## Caddy configuration
@@ -118,7 +118,7 @@ defmodule CaddyDevServer do
           config :caddy_dev_server,
             version: "#{@latest_version}",
             #{profile}: [
-              args: ~w(--config Caddyfile)
+              args: ~w(run --config Caddyfile)
             ]
       """
   end
